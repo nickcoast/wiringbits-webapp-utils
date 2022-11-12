@@ -1,7 +1,6 @@
 package net.wiringbits.webapp.utils.admin.repositories.daos
 
-import anorm.{SqlParser, SqlStringInterpolation}
-import net.wiringbits.webapp.utils.admin.config.TableSettings
+import net.wiringbits.webapp.utils.admin.config.{TableSettings, UUIDOrIntOrLongOrString}
 import net.wiringbits.webapp.utils.admin.repositories.models.{Cell, DatabaseTable, ForeignKey, TableColumn, TableRow}
 import net.wiringbits.webapp.utils.admin.utils.QueryBuilder
 import net.wiringbits.webapp.utils.admin.utils.models.QueryParameters
@@ -141,6 +140,12 @@ object DatabaseTablesDAO {
       """.as(tableColumnParser.*)
   }
 
+  def pk[T: UUIDOrIntOrLongOrString](v: T): String = v match {
+    case u: UUID => UUID.fromString(u.toString).toString() // I know this is funny
+    case i: Int => i.toString
+    case l: Long => l.toString
+    case s: String => s
+  }
   def find(tableName: String, primaryKeyField: String, primaryKeyValue: String)(implicit
       conn: Connection
   ): Option[TableRow] = {
@@ -150,9 +155,11 @@ object DatabaseTablesDAO {
     WHERE $primaryKeyField = ?
     """
     val preparedStatement = conn.prepareStatement(sql)
+    val primaryKeyString = pk(primaryKeyValue)
 
     // TODO: UUID from String can fail if the ID field isn't an UUID
-    preparedStatement.setObject(1, UUID.fromString(primaryKeyValue))
+    preparedStatement.setObject(1, primaryKeyString) // ok to pass ints as strings? or needs to be correct data type for prepared statement?
+
     val resultSet = preparedStatement.executeQuery()
     Try {
       resultSet.next()
