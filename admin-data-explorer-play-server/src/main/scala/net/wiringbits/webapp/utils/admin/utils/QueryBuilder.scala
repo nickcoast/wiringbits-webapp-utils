@@ -5,9 +5,14 @@ import net.wiringbits.webapp.utils.admin.repositories.models.TableColumn
 import scala.collection.mutable
 
 object QueryBuilder {
-  def create(tableName: String, body: Map[String, String], primaryKeyField: String): String = {
+  def create(tableName: String, body: Map[String, String], primaryKeyField: String, primaryKeyType: String = "UUID"): String = {
     val sqlFields = new mutable.StringBuilder(primaryKeyField)
-    val sqlValues = new mutable.StringBuilder("?")
+    // val sqlValues = new mutable.StringBuilder("?")
+    // primaryKeyType necessary because can't pass Postgres DEFAULT to preparedStatement value using scala AFAIK
+    val sqlValues = primaryKeyType match {
+      case "UUID" => new mutable.StringBuilder("?")
+      case _ => new mutable.StringBuilder("DEFAULT")
+    }
     for ((key, _) <- body) {
       sqlFields.append(s", $key")
       sqlValues.append(s", ?")

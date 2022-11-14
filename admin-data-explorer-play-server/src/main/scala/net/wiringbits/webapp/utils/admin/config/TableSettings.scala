@@ -23,7 +23,7 @@ case class TableSettings(
     hiddenColumns: List[String] = List.empty,
     nonEditableColumns: List[String] = List.empty,
     canBeDeleted: Boolean = true,
-    //primaryKeyDataType: String = "UUID"
+    primaryKeyDataType: String = "UUID"
 ) {
   /*def isUUIDOrIntOrLongOrString[T: UUIDOrIntOrLongOrString](v: T): String = v match {
     case u: UUID => "UUID"

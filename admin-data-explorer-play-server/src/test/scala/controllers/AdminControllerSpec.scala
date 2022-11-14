@@ -10,10 +10,21 @@ import org.apache.commons.lang3.StringUtils
 import play.api.inject.guice.GuiceApplicationBuilder
 
 import java.util.UUID
+import java.util.regex.Pattern
 
 class AdminControllerSpec extends PlayPostgresSpec {
   def dataExplorerSettings: DataExplorerSettings = app.injector.instanceOf(classOf[DataExplorerSettings])
   def usersSettings: TableSettings = dataExplorerSettings.tables.headOption.value
+  //def usersLogsSettings: TableSettings = dataExplorerSettings.tables.headOption.value
+  //def allSettings: TableSettings = dataExplorerSettings.tables.flatMap
+  def uuidSettings: TableSettings = dataExplorerSettings.tables(1)
+  def serialSettings: TableSettings = dataExplorerSettings.tables(2)
+  def bigSerialSettings: TableSettings = dataExplorerSettings.tables(3)
+
+  def isValidUUID(str: String): Boolean = {
+    if(str == null) return false
+    Pattern.compile("^[{]?[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}[}]?$").matcher(str).matches()
+  }
 
   override def guiceApplicationBuilder(container: PostgreSQLContainer): GuiceApplicationBuilder = {
     val appBuilder = super.guiceApplicationBuilder(container)
@@ -25,8 +36,14 @@ class AdminControllerSpec extends PlayPostgresSpec {
   "GET /admin/tables" should {
     "return tables from modules" in withApiClient { client =>
       val response = client.getTables.futureValue
-      val tableName = response.data.map(_.name).headOption.value
+      val tableName = response.data.map(_.name).headOption.value // users
       tableName must be(usersSettings.tableName)
+      val uuidTable = response.data.map(_.name)(1) // table 2
+      uuidTable must be(uuidSettings.tableName)
+      val serialTable = response.data.map(_.name)(2) // table 3
+      serialTable must be(serialSettings.tableName)
+      val bigSerialTable = response.data.map(_.name)(3) // table 4
+      bigSerialTable must be(bigSerialSettings.tableName)
     }
 
     "return extra config from module" in withApiClient { client =>
@@ -36,6 +53,24 @@ class AdminControllerSpec extends PlayPostgresSpec {
       usersSettings.referenceField must be(None)
       usersSettings.hiddenColumns must be(List.empty)
       usersSettings.nonEditableColumns must be(List.empty)
+
+      val head2 = response.data(1)
+      head2.primaryKeyName must be(uuidSettings.primaryKeyField)
+      uuidSettings.referenceField must be (None)
+      uuidSettings.hiddenColumns must be(List.empty)
+      uuidSettings.nonEditableColumns must be(List.empty)
+
+      val head3 = response.data(2)
+      head3.primaryKeyName must be(serialSettings.primaryKeyField)
+      serialSettings.referenceField must be(None)
+      serialSettings.hiddenColumns must be(List.empty)
+      serialSettings.nonEditableColumns must be(List.empty)
+
+      val head4 = response.data(3)
+      head4.primaryKeyName must be(serialSettings.primaryKeyField)
+      serialSettings.referenceField must be(None)
+      serialSettings.hiddenColumns must be(List.empty)
+      serialSettings.nonEditableColumns must be(List.empty)
     }
   }
 
@@ -58,9 +93,57 @@ class AdminControllerSpec extends PlayPostgresSpec {
       email must be(emailValue)
     }
 
+    "return data from uuid table" in withApiClient { client =>
+      //val uuid_id =  UUID.randomUUID().toString
+      val request = AdminCreateTable.Request(
+        Map()
+      )
+      client.createItem(uuidSettings.tableName, request).futureValue
+
+      val response = client.getTableMetadata(uuidSettings.tableName, List("id", "ASC"), List(0, 9), "{}").futureValue
+      val head = response.headOption.value
+      // TODO: Find a better way to do this
+      val uuidValue = head.find(_._1 == "id").value._2
+      response.size must be(1)
+      isValidUUID(uuidValue) must be(true)
+    }
+
+    "return data from serial table" in withApiClient { client =>
+      val request = AdminCreateTable.Request(Map())
+      client.createItem(serialSettings.tableName, request).futureValue
+
+      val response = client.getTableMetadata(serialSettings.tableName, List("id", "ASC"), List(0,9), "{}").futureValue
+      val head = response.headOption.value
+      // TODO: Find a better way to do this
+      val intValue = head.find(_._1 == "id").value._2
+      response.size must be(1)
+      intValue must be("1")
+    }
+    "return data from big serial table" in withApiClient { client =>
+      val request = AdminCreateTable.Request(Map())
+      client.createItem(bigSerialSettings.tableName, request).futureValue
+
+      val response = client.getTableMetadata(bigSerialSettings.tableName, List("id", "ASC"), List(0, 9), "{}").futureValue
+      val head = response.headOption.value
+      // TODO: Find a better way to do this
+      val intValue = head.find(_._1 == "id").value._2
+      response.size must be(1)
+      intValue must be("1")
+    }
+
+
     "return a empty map if there isn't any user" in withApiClient { client =>
       val response = client.getTableMetadata(usersSettings.tableName, List("name", "ASC"), List(0, 9), "{}").futureValue
       response.size must be(0)
+    }
+    
+    "return an empty map if tables are empty" in withApiClient { client =>
+      val response = client.getTableMetadata(uuidSettings.tableName, List("id", "ASC"), List(0,9), "{}").futureValue
+      response.size must be(0)
+      val response2 = client.getTableMetadata(serialSettings.tableName, List("id", "ASC"), List(0, 9), "{}").futureValue
+      response2.size must be(0)
+      val response3 = client.getTableMetadata(bigSerialSettings.tableName, List("id", "ASC"), List(0, 9), "{}").futureValue
+      response3.size must be(0)
     }
 
     "return a empty map if start and end is the same" in withApiClient { client =>
@@ -71,6 +154,23 @@ class AdminControllerSpec extends PlayPostgresSpec {
 
       val response = client.getTableMetadata(usersSettings.tableName, List("name", "ASC"), List(0, 0), "{}").futureValue
       response.size must be(0)
+    }
+
+    "return an empty map for range of zero length" in withApiClient { client =>
+      val request = AdminCreateTable.Request(Map()) // can use this for all 3 of the simple tables UUID, SERIAL, BIGSERIAL
+
+      client.createItem(uuidSettings.tableName, request).futureValue // 1
+      val response1 = client.getTableMetadata(uuidSettings.tableName, List("id","ASC"), List(0,0), "{}").futureValue
+      response1.size must be (0)
+
+      client.createItem(serialSettings.tableName, request).futureValue // 2
+      val response2 = client.getTableMetadata(serialSettings.tableName, List("id","ASC"), List(0,0), "{}").futureValue
+      response2.size must be (0)
+
+      client.createItem(bigSerialSettings.tableName, request).futureValue // 2
+      val response3 = client.getTableMetadata(bigSerialSettings.tableName, List("id", "ASC"), List(0, 0), "{}").futureValue
+      response3.size must be(0)
+
     }
 
     "only return the end minus start elements" in withApiClient { client =>
@@ -87,7 +187,30 @@ class AdminControllerSpec extends PlayPostgresSpec {
       response.size must be(returnedElements)
     }
 
+    "only return the range size of elements" in withApiClient { client =>
+      val end = 2
+      val start = 1
+      val returnedElements = end - start
+      //val data = Map() // data for these tables is always nothing. BIG/SERIAL autogenerated.
+
+      val tables = List(uuidSettings, serialSettings, bigSerialSettings)
+      for(table <- tables)
+        yield {
+          Range.apply(0, 4).foreach { _ =>
+            val request = AdminCreateTable.Request(Map()) // tried using data and got error. I thought val data was in scope but perhaps not
+            client.createItem(table.tableName, request).futureValue
+          }
+        }
+
+      for(table <- tables)
+        yield {
+          val response = client.getTableMetadata(table.tableName, List("id", "ASC"), List(start, end), "{}").futureValue
+          response.size must be(returnedElements)
+        }
+    }
+
     "return the elements in ascending order" in withApiClient { client =>
+      // should really be 5, since 5 users are created. Or Range.apply should start at 1.
       val createdUsers = 4
       val nameLength = 7
       Range.apply(0, createdUsers).foreach { i =>
@@ -103,6 +226,34 @@ class AdminControllerSpec extends PlayPostgresSpec {
       val name = head.find(_._1 == "name").value._2
       response.size must be(createdUsers)
       name must be(StringUtils.repeat('A', nameLength))
+    }
+
+    // TODO: if works then delete "return the elements in ascending order" which tests only the "users" table
+    // Also I don't think this makes sense when testing uuid since they are random. Perhaps these tables should also
+    // have a "name" column instead of testing the key column
+    "return the elements of all tables in ascending order" in withApiClient { client =>
+      val createdRows = 4
+      // removed uuidSettings because ordering is random
+      val tables = List(serialSettings, bigSerialSettings)
+
+      // insert rows
+      for( table <- tables)
+        yield {
+          Range.apply(0, createdRows).foreach { _ =>
+            val request = AdminCreateTable.Request(Map())
+            client.createItem(table.tableName, request).futureValue
+        }
+      }
+
+      for( table <- tables)
+        yield {
+          val response =
+            client.getTableMetadata(table.tableName, List("id", "ASC"), List(0, createdRows), "{}").futureValue
+          val head = response.headOption.value
+          val id = head.find(_._1 == "id").value._2 // id from response
+          response.size must be(createdRows)
+          id must be("1")
+        }
     }
 
     "return the elements in descending order" in withApiClient { client =>
@@ -121,6 +272,29 @@ class AdminControllerSpec extends PlayPostgresSpec {
       val name = head.find(_._1 == "name").value._2
       response.size must be(createdUsers)
       name must be(StringUtils.repeat('D', nameLength))
+    }
+    "return the elements of all tables in descending order" in withApiClient { client =>
+      val createdRows = 4
+      // removed uuidSettings because ordering is random
+      val tables = List(serialSettings, bigSerialSettings)
+      // insert rows
+      for (table <- tables)
+        yield {
+          Range.apply(0, createdRows).foreach { _ =>
+            val request = AdminCreateTable.Request(Map())
+            client.createItem(table.tableName, request).futureValue
+          }
+        }
+
+      for (table <- tables)
+        yield {
+          val response =
+            client.getTableMetadata(table.tableName, List("id", "DESC"), List(0, createdRows), "{}").futureValue
+          val head = response.headOption.value
+          val id = head.find(_._1 == "id").value._2 // id from response
+          response.size must be(createdRows)
+          id must be(createdRows) // toString
+        }
     }
 
     "return filtered elements" in withApiClient { client =>

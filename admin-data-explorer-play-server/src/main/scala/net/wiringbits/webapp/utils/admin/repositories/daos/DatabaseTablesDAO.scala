@@ -1,11 +1,13 @@
 package net.wiringbits.webapp.utils.admin.repositories.daos
 
-import net.wiringbits.webapp.utils.admin.config.{TableSettings, UUIDOrIntOrLongOrString}
+import net.wiringbits.webapp.utils.admin.config.TableSettings
 import net.wiringbits.webapp.utils.admin.repositories.models.{Cell, DatabaseTable, ForeignKey, TableColumn, TableRow}
 import net.wiringbits.webapp.utils.admin.utils.QueryBuilder
 import net.wiringbits.webapp.utils.admin.utils.models.QueryParameters
 
-import java.sql.Connection
+import anorm.{SqlParser, SqlStringInterpolation}
+
+import java.sql.{Connection, PreparedStatement}
 import java.util.UUID
 import scala.collection.mutable.ListBuffer
 import scala.util.Try
@@ -140,13 +142,19 @@ object DatabaseTablesDAO {
       """.as(tableColumnParser.*)
   }
 
-  def pk[T: UUIDOrIntOrLongOrString](v: T): String = v match {
+  /*def pk[T](v: T)(implicit uuu :UUIDOrIntOrLongOrString[T] ): String = v match {
     case u: UUID => UUID.fromString(u.toString).toString() // I know this is funny
     case i: Int => i.toString
     case l: Long => l.toString
     case s: String => s
-  }
-  def find(tableName: String, primaryKeyField: String, primaryKeyValue: String)(implicit
+  }*/
+  /*def pk[T](v: T)(implicit uuu: UUIDOrIntOrLongOrString[T]): String = v match {
+    case u: UUID => UUID.fromString(u.toString).toString() // I know this is funny
+    case i: Int => i.toString
+    case l: Long => l.toString
+    case s: String => s
+  }*/
+  def find(tableName: String, primaryKeyField: String, primaryKeyValue: String, primaryKeyType: String)(implicit
       conn: Connection
   ): Option[TableRow] = {
     val sql = s"""
@@ -155,11 +163,19 @@ object DatabaseTablesDAO {
     WHERE $primaryKeyField = ?
     """
     val preparedStatement = conn.prepareStatement(sql)
-    val primaryKeyString = pk(primaryKeyValue)
+    /*//val primaryKeyString = pk(primaryKeyValue)
+    val primaryKeyString = primaryKeyType match { // regular string unless UUID
+      case "UUID" => preparedStatement.setObject(1, UUID.fromString(primaryKeyValue))
+      case "Int" => preparedStatement.setInt(1,primaryKeyValue.toInt)
+      case "Long" => preparedStatement.setLong(1,primaryKeyValue.toLong)
+      case "String" => preparedStatement.setString(1,primaryKeyValue)
+    }*/
+
+
 
     // TODO: UUID from String can fail if the ID field isn't an UUID
-    preparedStatement.setObject(1, primaryKeyString) // ok to pass ints as strings? or needs to be correct data type for prepared statement?
-
+    //preparedStatement.setObject(1, primaryKeyString) // ok to pass ints as strings? or needs to be correct data type for prepared statement?
+    setPreparedStatementKey(preparedStatement, primaryKeyValue, primaryKeyType)
     val resultSet = preparedStatement.executeQuery()
     Try {
       resultSet.next()
@@ -172,13 +188,29 @@ object DatabaseTablesDAO {
     }.toOption
   }
 
-  def create(tableName: String, body: Map[String, String], primaryKeyField: String)(implicit
+  def setPreparedStatementKey(preparedStatement: PreparedStatement, primaryKeyValue: String, primaryKeyType: String): Unit = {
+    primaryKeyType match { // regular string unless UUID
+      case "UUID" => preparedStatement.setObject(1, UUID.fromString(primaryKeyValue))
+      case _ => preparedStatement.setInt(1, primaryKeyValue.toInt)
+    }
+  }
+  def create(tableName: String, body: Map[String, String], primaryKeyField: String, primaryKeyType: String)(implicit
       conn: Connection
   ): Unit = {
-    val sql = QueryBuilder.create(tableName, body, primaryKeyField)
+    val sql = QueryBuilder.create(tableName, body, primaryKeyField, primaryKeyType)
     val preparedStatement = conn.prepareStatement(sql)
 
-    preparedStatement.setObject(1, UUID.randomUUID())
+    if(primaryKeyType == "UUID")  preparedStatement.setObject(1, UUID.randomUUID())
+    // TODO: If can figure out how to set DEFAULT here, then won't need to pass primaryKeyType into QueryBuilder.create
+    // eg. NULL works in MySQL to generate default value, but not Postgres unfortunately
+    else preparedStatement.setNull(1, java.sql.Types.TIMESTAMP) // would probably work for MySQL
+    // Or if this worked: preparedStatement.setDefault(1, java.sql.Types.DEFAULT) // but no such type as DEFAULT
+    // Want to replicate this query: INSERT INTO test_serial (id) VALUES(DEFAULT)
+
+    // Instead for now send primaryKeyType to QueryBuilder.create, where it handles this and sets id = DEFAULT
+    // instead of using ? parameter
+    // no need to change loop below because Primary key is handled
+
     for (i <- 2 to body.size + 1) {
       val value = body(body.keys.toList(i - 2))
       preparedStatement.setObject(i, value)
