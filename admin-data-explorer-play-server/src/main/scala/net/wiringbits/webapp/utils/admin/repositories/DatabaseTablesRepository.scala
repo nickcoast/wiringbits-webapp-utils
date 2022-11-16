@@ -94,7 +94,8 @@ class DatabaseTablesRepository @Inject() (database: Database)(implicit
             columns.find(_.name == key).getOrElse(throw new RuntimeException(s"Invalid property in body request: $key"))
           (field, value)
         }
-        DatabaseTablesDAO.update(tableName, fieldsAndValues, settings.primaryKeyField, primaryKeyValue)
+        val primaryKeyType = settings.primaryKeyDataType
+        DatabaseTablesDAO.update(tableName, fieldsAndValues, settings.primaryKeyField, primaryKeyValue, primaryKeyType)
       }
     }
 
@@ -102,7 +103,8 @@ class DatabaseTablesRepository @Inject() (database: Database)(implicit
     Future {
       database.withConnection { implicit conn =>
         val primaryKeyField = tableSettings.unsafeFindByName(tableName).primaryKeyField
-        DatabaseTablesDAO.delete(tableName, primaryKeyField, primaryKeyValue)
+        val primaryKeyType = tableSettings.unsafeFindByName(tableName).primaryKeyDataType
+        DatabaseTablesDAO.delete(tableName, primaryKeyField, primaryKeyValue, primaryKeyType)
       }
     }
 

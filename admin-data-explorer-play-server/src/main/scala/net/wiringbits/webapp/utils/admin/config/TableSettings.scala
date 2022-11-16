@@ -14,6 +14,8 @@ import java.util.UUID
   *   columns that aren't editable (disabled) via react-admin
   * @param canBeDeleted
   *   indicates if resources from this table can be deleted
+  * @param primaryKeyDataType
+  *   "UUID", or "Int" for SERIAL and BIGSERIAL primary keys
   */
 
 case class TableSettings(

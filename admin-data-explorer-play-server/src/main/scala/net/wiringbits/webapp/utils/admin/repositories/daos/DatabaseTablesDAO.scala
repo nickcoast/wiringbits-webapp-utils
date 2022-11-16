@@ -142,7 +142,7 @@ object DatabaseTablesDAO {
       """.as(tableColumnParser.*)
   }
 
-  def find(tableName: String, primaryKeyField: String, primaryKeyValue: String, primaryKeyType: String)(implicit
+  def find(tableName: String, primaryKeyField: String, primaryKeyValue: String, primaryKeyType: String = "UUID")(implicit
       conn: Connection
   ): Option[TableRow] = {
     val sql = s"""
@@ -173,26 +173,25 @@ object DatabaseTablesDAO {
       case _ => preparedStatement.setInt(1, primaryKeyValue.toInt)
     }
   }
-  def create(tableName: String, body: Map[String, String], primaryKeyField: String, primaryKeyType: String)(implicit
+  def create(tableName: String, body: Map[String, String], primaryKeyField: String, primaryKeyType: String = "UUID")(implicit
       conn: Connection
   ): Unit = {
     val sql = QueryBuilder.create(tableName, body, primaryKeyField, primaryKeyType)
     val preparedStatement = conn.prepareStatement(sql)
 
-    if(primaryKeyType == "UUID")  preparedStatement.setObject(1, UUID.randomUUID())
-    // TODO: If can figure out how to set DEFAULT here, then won't need to pass primaryKeyType into QueryBuilder.create
+    var i = 0
+    if(primaryKeyType == "UUID") {
+      i = i+1
+      preparedStatement.setObject(i, UUID.randomUUID())
+    }
+    // TODO: Seems to be no way set DEFAULT here. If there were, could skip passing primaryKeyType into QueryBuilder.create
     // eg. NULL works in MySQL to generate default value, but not Postgres unfortunately
-    else preparedStatement.setNull(1, java.sql.Types.TIMESTAMP) // would probably work for MySQL
-    // Or if this worked: preparedStatement.setDefault(1, java.sql.Types.DEFAULT) // but no such type as DEFAULT
-    // Want to replicate this query: INSERT INTO test_serial (id) VALUES(DEFAULT)
+    // Can't pass "DEFAULT" keyword into a parameterized query: INSERT INTO test_serial (id) VALUES(DEFAULT)
+    // So, setting it inside of QueryBuilder instead
 
-    // Instead for now send primaryKeyType to QueryBuilder.create, where it handles this and sets id = DEFAULT
-    // instead of using ? parameter
-    // no need to change loop below because Primary key is handled
-
-    for (i <- 2 to body.size + 1) {
-      val value = body(body.keys.toList(i - 2))
-      preparedStatement.setObject(i, value)
+    for (j <- i+1 to body.size + i) {
+      val value = body(body.keys.toList(j - i - 1))
+      preparedStatement.setObject(j, value)
     }
     val _ = preparedStatement.executeUpdate()
   }
@@ -201,7 +200,8 @@ object DatabaseTablesDAO {
       tableName: String,
       fieldsAndValues: Map[TableColumn, String],
       primaryKeyField: String,
-      primaryKeyValue: String
+      primaryKeyValue: String,
+      primaryKeyType: String = "UUID"
   )(implicit conn: Connection): Unit = {
     val sql = QueryBuilder.update(tableName, fieldsAndValues, primaryKeyField)
     val preparedStatement = conn.prepareStatement(sql)
@@ -211,11 +211,15 @@ object DatabaseTablesDAO {
       preparedStatement.setObject(i + 1, value)
     }
     // where ... = ?
-    preparedStatement.setObject(notNullData.size + 1, UUID.fromString(primaryKeyValue))
+    // TODO: use setPreparedStatementKey() instead
+    primaryKeyType match {
+      case "UUID" => preparedStatement.setObject(notNullData.size + 1, UUID.fromString(primaryKeyValue))
+      case _ => preparedStatement.setInt(notNullData.size + 1, primaryKeyValue.toInt)
+    }
     val _ = preparedStatement.executeUpdate()
   }
 
-  def delete(tableName: String, primaryKeyField: String, primaryKeyValue: String)(implicit
+  def delete(tableName: String, primaryKeyField: String, primaryKeyValue: String, primaryKeyType: String = "UUID")(implicit
       conn: Connection
   ): Unit = {
     val sql = s"""
@@ -224,7 +228,11 @@ object DatabaseTablesDAO {
       """
     val preparedStatement = conn.prepareStatement(sql)
 
-    preparedStatement.setObject(1, UUID.fromString(primaryKeyValue))
+    // TODO: use setPreparedStatementKey() instead
+    primaryKeyType match {
+      case "UUID" => preparedStatement.setObject(1, UUID.fromString(primaryKeyValue))
+      case _ => preparedStatement.setInt(1, primaryKeyValue.toInt)
+    }
     val _ = preparedStatement.executeUpdate()
   }
 

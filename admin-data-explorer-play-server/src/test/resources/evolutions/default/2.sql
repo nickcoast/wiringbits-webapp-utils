@@ -14,9 +14,4 @@ CREATE TABLE serial_table (
 CREATE TABLE big_serial_table (
     id BIGSERIAL NOT NULL PRIMARY KEY,
     name TEXT NOT NULL
-)
-
--- CREATE TABLE int_table (
---     id INT NOT NULL PRIMARY KEY
--- );
-
+);
