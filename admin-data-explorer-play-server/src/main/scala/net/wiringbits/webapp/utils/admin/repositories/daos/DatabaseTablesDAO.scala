@@ -167,10 +167,10 @@ object DatabaseTablesDAO {
     }.toOption
   }
 
-  def setPreparedStatementKey(preparedStatement: PreparedStatement, primaryKeyValue: String, primaryKeyType: String): Unit = {
+  def setPreparedStatementKey(preparedStatement: PreparedStatement, primaryKeyValue: String, primaryKeyType: String, parameterIndex: Int = 1): Unit = {
     primaryKeyType match { // regular string unless UUID
-      case "UUID" => preparedStatement.setObject(1, UUID.fromString(primaryKeyValue))
-      case _ => preparedStatement.setInt(1, primaryKeyValue.toInt)
+      case "UUID" => preparedStatement.setObject(parameterIndex, UUID.fromString(primaryKeyValue))
+      case _ => preparedStatement.setInt(parameterIndex, primaryKeyValue.toInt)
     }
   }
   def create(tableName: String, body: Map[String, String], primaryKeyField: String, primaryKeyType: String = "UUID")(implicit
@@ -211,11 +211,7 @@ object DatabaseTablesDAO {
       preparedStatement.setObject(i + 1, value)
     }
     // where ... = ?
-    // TODO: use setPreparedStatementKey() instead
-    primaryKeyType match {
-      case "UUID" => preparedStatement.setObject(notNullData.size + 1, UUID.fromString(primaryKeyValue))
-      case _ => preparedStatement.setInt(notNullData.size + 1, primaryKeyValue.toInt)
-    }
+    setPreparedStatementKey(preparedStatement, primaryKeyValue, primaryKeyType, notNullData.size + 1)
     val _ = preparedStatement.executeUpdate()
   }
 
@@ -229,10 +225,7 @@ object DatabaseTablesDAO {
     val preparedStatement = conn.prepareStatement(sql)
 
     // TODO: use setPreparedStatementKey() instead
-    primaryKeyType match {
-      case "UUID" => preparedStatement.setObject(1, UUID.fromString(primaryKeyValue))
-      case _ => preparedStatement.setInt(1, primaryKeyValue.toInt)
-    }
+    setPreparedStatementKey(preparedStatement, primaryKeyValue, primaryKeyType)
     val _ = preparedStatement.executeUpdate()
   }
 
